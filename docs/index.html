@@ -1,0 +1,190 @@
+<!doctype html>
+<html lang="hi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>साथी AI — एडमिन पैनल</title>
+<style>
+:root{--bg:#0e0e16;--card:#1a1a26;--pink:#d946ef;--violet:#8b5cf6;--txt:#eee;--mut:#999}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--txt);font-family:system-ui,sans-serif}
+header{padding:16px;display:flex;justify-content:space-between;align-items:center;background:var(--card)}
+h1{margin:0;font-size:22px;color:var(--pink)}main{padding:16px;max-width:900px;margin:auto}
+.card{background:var(--card);border-radius:16px;padding:16px;margin-bottom:16px}
+label{display:block;margin:10px 0 4px;color:var(--mut);font-size:14px}
+input,textarea,select{width:100%;padding:10px;border-radius:10px;border:1px solid #333;background:#11111a;color:var(--txt);font-size:15px}
+textarea{min-height:80px}
+button{background:linear-gradient(90deg,var(--pink),var(--violet));color:#fff;border:0;border-radius:24px;padding:10px 18px;font-size:15px;cursor:pointer;margin:6px 6px 0 0}
+button.sec{background:#2a2a38}button.del{background:#7f1d1d}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:12px}
+.ch{background:#11111a;border-radius:14px;overflow:hidden;cursor:pointer}
+.ch img{width:100%;aspect-ratio:.7;object-fit:cover;background:#222;display:block}
+.ch div{padding:8px;font-size:14px}.prev{width:120px;aspect-ratio:.7;object-fit:cover;border-radius:12px;background:#222}
+.row{display:flex;gap:12px}.row>*{flex:1}.hide{display:none}.msg{color:#a3e635;margin-top:8px}.err{color:#f87171}
+small{color:var(--mut)}
+</style>
+</head>
+<body>
+<header><h1>साथी AI · एडमिन</h1><button id="logoutBtn" class="sec hide">लॉग आउट</button></header>
+<main>
+  <section id="loginBox" class="card">
+    <h2>लॉगिन</h2>
+    <label>ईमेल</label><input id="email" type="email">
+    <label>पासवर्ड</label><input id="pass" type="password">
+    <button id="loginBtn">लॉगिन करें</button>
+    <div id="loginMsg" class="err"></div>
+  </section>
+
+  <section id="panel" class="hide">
+    <div class="card">
+      <h2>ऐप सेटिंग्स</h2>
+      <label>Gemini API key</label><input id="geminiKey" type="password" placeholder="AIza...">
+      <label>Model</label>
+      <select id="model">
+        <option value="gemini-2.5-flash">gemini-2.5-flash (सुझाया गया)</option>
+        <option value="gemini-2.5-flash-lite">gemini-2.5-flash-lite (तेज़, ज़्यादा मुफ़्त सीमा)</option>
+        <option value="gemini-2.0-flash">gemini-2.0-flash</option>
+      </select>
+      <button id="saveCfg">सेटिंग्स सेव करें</button><div id="cfgMsg" class="msg"></div>
+    </div>
+
+    <div class="card">
+      <h2 id="formTitle">नया किरदार जोड़ें</h2>
+      <div class="row">
+        <div><label>नाम *</label><input id="f_name"></div>
+        <div><label>उम्र (18+)</label><input id="f_age" type="number" min="18"></div>
+      </div>
+      <div class="row">
+        <div><label>कैटेगरी (जैसे: दोस्त, मोटिवेटर, फ़नी)</label><input id="f_category"></div>
+        <div><label>क्रम (छोटा नंबर पहले दिखेगा)</label><input id="f_order" type="number" value="100"></div>
+      </div>
+      <label>टैगलाइन (कार्ड पर दिखेगी)</label><input id="f_tagline">
+      <label>परिचय / बायो</label><textarea id="f_bio"></textarea>
+      <label>स्वभाव और कहानी (AI इसी के हिसाब से बात करेगा)</label>
+      <textarea id="f_personality" placeholder="जैसे: हँसमुख, थोड़ी शरारती, किताबें पढ़ना पसंद, दिल्ली में रहती है..."></textarea>
+      <label>पहला संदेश (Greeting)</label><input id="f_greeting" placeholder="नमस्ते! कैसे हो? 😊">
+      <label>मुख्य फ़ोटो — Google Drive लिंक</label>
+      <input id="f_image" placeholder="https://drive.google.com/file/d/.../view?usp=sharing">
+      <small>Drive में फ़ोटो पर Share → "Anyone with the link" चुनें, फिर लिंक यहाँ डालें।</small><br>
+      <img id="f_prev" class="prev" alt="">
+      <label>गैलरी फ़ोटो (हर लाइन में एक Drive लिंक)</label><textarea id="f_gallery"></textarea>
+      <label><input id="f_active" type="checkbox" checked style="width:auto"> ऐप में दिखाएँ</label>
+      <button id="saveChar">सेव करें</button>
+      <button id="newChar" class="sec">नया फ़ॉर्म</button>
+      <button id="delChar" class="del hide">मिटाएँ</button>
+      <div id="charMsg" class="msg"></div>
+    </div>
+
+    <div class="card">
+      <h2>सारे किरदार (<span id="count">0</span>)</h2>
+      <div id="list" class="grid"></div>
+    </div>
+
+    <div class="card">
+      <h2>एक साथ बहुत सारे जोड़ें (JSON)</h2>
+      <small>JSON array: [{"name":"...","age":22,"category":"...","tagline":"...","bio":"...","personality":"...","greeting":"...","imageUrl":"drive link","gallery":["drive link"]}]</small>
+      <textarea id="bulk" style="min-height:140px"></textarea>
+      <button id="bulkBtn">सब जोड़ें</button><div id="bulkMsg" class="msg"></div>
+    </div>
+  </section>
+</main>
+
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.4/firebase-app.js";
+import { getAuth, signInWithEmailAndPassword, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.12.4/firebase-auth.js";
+import { getFirestore, collection, getDocs, doc, getDoc, setDoc, addDoc, deleteDoc } from "https://www.gstatic.com/firebasejs/10.12.4/firebase-firestore.js";
+
+const firebaseConfig = {
+  apiKey: "REPLACE_API_KEY",
+  authDomain: "REPLACE_AUTH_DOMAIN",
+  projectId: "REPLACE_PROJECT_ID",
+  storageBucket: "REPLACE_STORAGE_BUCKET",
+  messagingSenderId: "REPLACE_SENDER_ID",
+  appId: "REPLACE_APP_ID"
+};
+const app = initializeApp(firebaseConfig);
+const auth = getAuth(app);
+const db = getFirestore(app);
+const $ = id => document.getElementById(id);
+
+function drive(link){
+  link=(link||"").trim(); if(!link||!link.includes("google")) return link;
+  const pats=[/drive\.google\.com\/file\/d\/([a-zA-Z0-9_-]+)/,/open\?id=([a-zA-Z0-9_-]+)/,/[?&]id=([a-zA-Z0-9_-]+)/,/googleusercontent\.com\/d\/([a-zA-Z0-9_-]+)/];
+  for(const p of pats){const m=link.match(p); if(m) return `https://lh3.googleusercontent.com/d/${m[1]}=w600`;}
+  return link;
+}
+$("f_image").addEventListener("input",()=>$("f_prev").src=drive($("f_image").value));
+
+$("loginBtn").onclick=async()=>{
+  $("loginMsg").textContent="";
+  try{await signInWithEmailAndPassword(auth,$("email").value.trim(),$("pass").value);}
+  catch(e){$("loginMsg").textContent="लॉगिन नहीं हुआ: "+e.code;}
+};
+$("logoutBtn").onclick=()=>signOut(auth);
+onAuthStateChanged(auth,u=>{
+  $("loginBox").classList.toggle("hide",!!u); $("panel").classList.toggle("hide",!u); $("logoutBtn").classList.toggle("hide",!u);
+  if(u){loadCfg();loadList();}
+});
+
+async function loadCfg(){
+  const s=await getDoc(doc(db,"config","app"));
+  if(s.exists()){const d=s.data(); $("geminiKey").value=d.geminiKey||""; if(d.model) $("model").value=d.model;}
+}
+$("saveCfg").onclick=async()=>{
+  await setDoc(doc(db,"config","app"),{geminiKey:$("geminiKey").value.trim(),model:$("model").value},{merge:true});
+  $("cfgMsg").textContent="सेव हो गया ✔";
+};
+
+let editing=null;
+const fields=["name","age","category","order","tagline","bio","personality","greeting","image","gallery"];
+function clearForm(){editing=null;fields.forEach(f=>$("f_"+f).value="");$("f_order").value=100;$("f_active").checked=true;$("f_prev").src="";
+  $("formTitle").textContent="नया किरदार जोड़ें";$("delChar").classList.add("hide");$("charMsg").textContent="";}
+$("newChar").onclick=clearForm;
+
+function formData(){
+  return {name:$("f_name").value.trim(),age:Number($("f_age").value)||null,category:$("f_category").value.trim(),
+    order:Number($("f_order").value)||100,tagline:$("f_tagline").value.trim(),bio:$("f_bio").value.trim(),
+    personality:$("f_personality").value.trim(),greeting:$("f_greeting").value.trim(),imageUrl:$("f_image").value.trim(),
+    gallery:$("f_gallery").value.split("\n").map(s=>s.trim()).filter(Boolean),active:$("f_active").checked};
+}
+function clean(d){ if(d.age!=null && d.age<18) throw new Error("उम्र 18 या उससे ज़्यादा होनी चाहिए"); if(d.age==null) delete d.age; return d; }
+
+$("saveChar").onclick=async()=>{
+  try{
+    const d=clean(formData()); if(!d.name) throw new Error("नाम ज़रूरी है");
+    if(editing) await setDoc(doc(db,"characters",editing),d); else await addDoc(collection(db,"characters"),d);
+    $("charMsg").textContent="सेव हो गया ✔"; clearForm(); loadList();
+  }catch(e){$("charMsg").textContent="गलती: "+e.message;}
+};
+$("delChar").onclick=async()=>{
+  if(!editing||!confirm("पक्का मिटाना है?")) return;
+  await deleteDoc(doc(db,"characters",editing)); clearForm(); loadList();
+};
+
+async function loadList(){
+  const snap=await getDocs(collection(db,"characters"));
+  const items=[]; snap.forEach(s=>items.push({id:s.id,...s.data()}));
+  items.sort((a,b)=>(a.order||999)-(b.order||999));
+  $("count").textContent=items.length; $("list").innerHTML="";
+  for(const c of items){
+    const el=document.createElement("div"); el.className="ch";
+    el.innerHTML=`<img src="${drive(c.imageUrl)}" loading="lazy"><div><b></b><br><small></small></div>`;
+    el.querySelector("b").textContent=c.name+(c.age?", "+c.age:""); el.querySelector("small").textContent=(c.active===false?"(छुपा) ":"")+(c.category||"");
+    el.onclick=()=>{editing=c.id;$("f_name").value=c.name||"";$("f_age").value=c.age||"";$("f_category").value=c.category||"";
+      $("f_order").value=c.order||100;$("f_tagline").value=c.tagline||"";$("f_bio").value=c.bio||"";$("f_personality").value=c.personality||"";
+      $("f_greeting").value=c.greeting||"";$("f_image").value=c.imageUrl||"";$("f_gallery").value=(c.gallery||[]).join("\n");
+      $("f_active").checked=c.active!==false;$("f_prev").src=drive(c.imageUrl);$("formTitle").textContent="बदलें: "+c.name;
+      $("delChar").classList.remove("hide");window.scrollTo({top:$("formTitle").offsetTop-20,behavior:"smooth"});};
+    $("list").appendChild(el);
+  }
+}
+
+$("bulkBtn").onclick=async()=>{
+  try{
+    const arr=JSON.parse($("bulk").value); let n=0;
+    for(const c of arr){ const d=clean({order:100,active:true,gallery:[],...c}); if(!d.name) continue; await addDoc(collection(db,"characters"),d); n++; }
+    $("bulkMsg").textContent=n+" किरदार जुड़ गए ✔"; loadList();
+  }catch(e){$("bulkMsg").textContent="गलती: "+e.message;}
+};
+</script>
+</body>
+</html>
