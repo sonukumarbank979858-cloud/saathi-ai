@@ -109,9 +109,10 @@ fun App() {
     var tab by remember { mutableIntStateOf(0) }
     var openChat by remember { mutableStateOf<Character?>(null) }
     var openCustom by remember { mutableStateOf<Character?>(null) }
+    var openCall by remember { mutableStateOf<Pair<Character, Boolean>?>(null) }
     var viewImage by remember { mutableStateOf<String?>(null) }
 
-    androidx.activity.compose.BackHandler(enabled = openChat != null || openCustom != null || viewImage != null) {
+    androidx.activity.compose.BackHandler(enabled = openCall == null && (openChat != null || openCustom != null || viewImage != null)) {
         when {
             viewImage != null -> viewImage = null
             openCustom != null -> openCustom = null
@@ -120,10 +121,12 @@ fun App() {
     }
 
     when {
+        openCall != null -> CallScreen(openCall!!.first, store, t, lang, config, openCall!!.second) { openCall = null }
         viewImage != null -> ImageViewer(viewImage!!) { viewImage = null }
         openCustom != null -> CustomizeScreen(openCustom!!, store, t) { openCustom = null }
         openChat != null -> ChatScreen(openChat!!, store, t, lang, config,
-            onBack = { openChat = null }, onCustomize = { openCustom = openChat })
+            onBack = { openChat = null }, onCustomize = { openCustom = openChat },
+            onCall = { v -> openCall = openChat!! to v })
         else -> Scaffold(
             containerColor = Bg,
             bottomBar = {
@@ -263,7 +266,7 @@ fun MessagesScreen(chars: List<Character>, store: Store, t: T, open: (Character)
 }
 
 @Composable
-fun ChatScreen(c: Character, store: Store, t: T, lang: String, config: Map<String, Any?>, onBack: () -> Unit, onCustomize: () -> Unit) {
+fun ChatScreen(c: Character, store: Store, t: T, lang: String, config: Map<String, Any?>, onBack: () -> Unit, onCustomize: () -> Unit, onCall: (Boolean) -> Unit = {}) {
     val scope = rememberCoroutineScope()
     var msgs by remember(c.id) { mutableStateOf(store.messages(c.id)) }
     var input by remember { mutableStateOf("") }
@@ -306,6 +309,8 @@ fun ChatScreen(c: Character, store: Store, t: T, lang: String, config: Map<Strin
                     Text(c.name, color = Color.White, fontWeight = FontWeight.Bold, fontSize = 20.sp)
                     if (busy) Text(t.typing, color = Color(0xFFDDDDDD), fontSize = 12.sp)
                 }
+                IconButton(onClick = { onCall(false) }) { Icon(Icons.Filled.Call, null, tint = Color.White) }
+                IconButton(onClick = { onCall(true) }) { Icon(Icons.Filled.Videocam, null, tint = Color.White) }
                 Box {
                     IconButton(onClick = { menu = true }) { Icon(Icons.Filled.MoreVert, null, tint = Color.White) }
                     DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {

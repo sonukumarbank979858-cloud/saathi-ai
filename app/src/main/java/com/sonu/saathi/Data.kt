@@ -22,6 +22,7 @@ data class Character(
     val imageUrl: String,
     val gallery: List<String>,
     val order: Long,
+    val videoUrl: String = "",
 )
 
 data class ChatMessage(val fromUser: Boolean, val text: String, val time: Long)
@@ -35,6 +36,15 @@ data class Custom(
 
 /** Google Drive share link -> direct image link. Other links are returned unchanged. */
 object Drive {
+    /** Drive share link -> direct stream URL for a video (small files play best, under ~50 MB). */
+    fun video(link: String): String {
+        val l = link.trim()
+        if (l.isEmpty() || !l.contains("drive.google")) return l
+        val id = listOf(Regex("/d/([a-zA-Z0-9_-]+)"), Regex("[?&]id=([a-zA-Z0-9_-]+)"))
+            .firstNotNullOfOrNull { it.find(l)?.groupValues?.get(1) } ?: return l
+        return "https://drive.usercontent.google.com/download?id=$id&export=download&confirm=t"
+    }
+
     private val patterns = listOf(
         Regex("drive\\.google\\.com/file/d/([a-zA-Z0-9_-]+)"),
         Regex("drive\\.google\\.com/open\\?id=([a-zA-Z0-9_-]+)"),
@@ -131,6 +141,7 @@ object Firestore {
                     imageUrl = Drive.direct(f["imageUrl"]?.toString() ?: ""),
                     gallery = ((f["gallery"] as? List<Any?>) ?: emptyList()).map { Drive.direct(it.toString()) },
                     order = (f["order"] as? Number)?.toLong() ?: 999,
+                    videoUrl = Drive.video(f["videoUrl"]?.toString() ?: ""),
                 )
             }
             token = js.optString("nextPageToken").ifEmpty { null }
