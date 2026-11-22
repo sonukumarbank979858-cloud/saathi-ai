@@ -84,7 +84,7 @@ small{color:var(--mut)}
       <h2>एक साथ बहुत सारे जोड़ें (JSON)</h2>
       <small>JSON array: [{"name":"...","age":22,"category":"...","tagline":"...","bio":"...","personality":"...","greeting":"...","imageUrl":"drive link","gallery":["drive link"]}]</small>
       <textarea id="bulk" style="min-height:140px"></textarea>
-      <button id="bulkBtn">सब जोड़ें</button><div id="bulkMsg" class="msg"></div>
+      <button id="bulkBtn">सब जोड़ें</button> <button id="seedBtn">6 स्टार्टर किरदार लोड करें</button><div id="bulkMsg" class="msg"></div>
     </div>
   </section>
 </main>
@@ -184,6 +184,7 @@ async function loadList(){
   }
 }
 
+$("seedBtn").onclick=async()=>{$("bulk").value=await (await fetch("seeds.json?"+Date.now())).text();};
 $("bulkBtn").onclick=async()=>{
   try{
     const arr=JSON.parse($("bulk").value); let n=0;
