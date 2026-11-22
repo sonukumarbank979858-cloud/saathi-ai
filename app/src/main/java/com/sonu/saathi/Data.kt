@@ -82,6 +82,7 @@ object Net {
 }
 
 object Firestore {
+    private val keyParam get() = if (BuildConfig.FIREBASE_API_KEY.startsWith("AIza")) "key=${BuildConfig.FIREBASE_API_KEY}" else ""
     private val base get() =
         "https://firestore.googleapis.com/v1/projects/${BuildConfig.FIREBASE_PROJECT_ID}/databases/(default)/documents"
 
@@ -109,7 +110,7 @@ object Firestore {
         val out = mutableListOf<Character>()
         var token: String? = null
         do {
-            var url = "$base/characters?pageSize=300&key=${BuildConfig.FIREBASE_API_KEY}"
+            var url = "$base/characters?pageSize=300&$keyParam"
             if (token != null) url += "&pageToken=" + URLEncoder.encode(token, "UTF-8")
             val js = JSONObject(Net.get(url))
             val docs = js.optJSONArray("documents") ?: JSONArray()
@@ -138,7 +139,7 @@ object Firestore {
     }
 
     suspend fun config(): Map<String, Any?> = withContext(Dispatchers.IO) {
-        fields(JSONObject(Net.get("$base/config/app?key=${BuildConfig.FIREBASE_API_KEY}")))
+        fields(JSONObject(Net.get("$base/config/app?$keyParam")))
     }
 }
 
