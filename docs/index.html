@@ -31,6 +31,7 @@ small{color:var(--mut)}
     <label>ईमेल</label><input id="email" type="email">
     <label>पासवर्ड</label><input id="pass" type="password">
     <button id="loginBtn">लॉगिन करें</button>
+    <button id="signupBtn" style="margin-left:8px">पहली बार: एडमिन अकाउंट बनाएँ</button>
     <div id="loginMsg" class="err"></div>
   </section>
 
@@ -90,16 +91,16 @@ small{color:var(--mut)}
 
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.4/firebase-app.js";
-import { getAuth, signInWithEmailAndPassword, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.12.4/firebase-auth.js";
+import { getAuth, signInWithEmailAndPassword, createUserWithEmailAndPassword, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.12.4/firebase-auth.js";
 import { getFirestore, collection, getDocs, doc, getDoc, setDoc, addDoc, deleteDoc } from "https://www.gstatic.com/firebasejs/10.12.4/firebase-firestore.js";
 
 const firebaseConfig = {
-  apiKey: "REPLACE_API_KEY",
+  apiKey: "AIzaSyBP2YQkJslx8_qbc6qYzC0UKsjpjvx_BFw",
   authDomain: "saathi-ai-68bbf.firebaseapp.com",
   projectId: "saathi-ai-68bbf",
   storageBucket: "saathi-ai-68bbf.firebasestorage.app",
-  messagingSenderId: "REPLACE_SENDER_ID",
-  appId: "REPLACE_APP_ID"
+  messagingSenderId: "827811899174",
+  appId: "1:827811899174:web:8653754a7adf8ab38e43e7"
 };
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
@@ -118,6 +119,11 @@ $("loginBtn").onclick=async()=>{
   $("loginMsg").textContent="";
   try{await signInWithEmailAndPassword(auth,$("email").value.trim(),$("pass").value);}
   catch(e){$("loginMsg").textContent="लॉगिन नहीं हुआ: "+e.code;}
+};
+$("signupBtn").onclick=async()=>{
+  $("loginMsg").textContent="";
+  try{await createUserWithEmailAndPassword(auth,$("email").value.trim(),$("pass").value);}
+  catch(e){$("loginMsg").textContent="अकाउंट नहीं बना: "+e.code;}
 };
 $("logoutBtn").onclick=()=>signOut(auth);
 onAuthStateChanged(auth,u=>{
