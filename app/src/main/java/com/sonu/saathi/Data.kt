@@ -156,13 +156,24 @@ object Gemini {
                 .put("parts", JSONArray().put(JSONObject().put("text", m.text))))
         }
         val gen = JSONObject().put("temperature", 0.95).put("maxOutputTokens", 1024)
-        if (model.contains("2.5")) gen.put("thinkingConfig", JSONObject().put("thinkingBudget", 0))
         val body = JSONObject()
             .put("systemInstruction", JSONObject().put("parts", JSONArray().put(JSONObject().put("text", system))))
             .put("contents", contents)
             .put("generationConfig", gen)
-        val url = "https://generativelanguage.googleapis.com/v1beta/models/$model:generateContent?key=$key"
-        val js = JSONObject(Net.post(url, body.toString()))
+        // Try the admin's chosen model first, then free fallbacks (models get retired or busy).
+        val models = listOf(model, "gemini-3.5-flash", "gemini-3.1-flash-lite", "gemini-flash-lite-latest")
+            .filter { it.isNotBlank() }.distinct()
+        var raw: String? = null
+        var lastErr: Exception? = null
+        for (m in models) {
+            if (m.contains("2.5")) gen.put("thinkingConfig", JSONObject().put("thinkingBudget", 0)) else gen.remove("thinkingConfig")
+            body.put("generationConfig", gen)
+            try {
+                raw = Net.post("https://generativelanguage.googleapis.com/v1beta/models/$m:generateContent?key=$key", body.toString())
+                break
+            } catch (e: Exception) { lastErr = e }
+        }
+        val js = JSONObject(raw ?: throw (lastErr ?: Exception("Gemini error")))
         val cands = js.optJSONArray("candidates")
         if (cands == null || cands.length() == 0) return@withContext "..."
         val parts = cands.getJSONObject(0).optJSONObject("content")?.optJSONArray("parts") ?: return@withContext "..."

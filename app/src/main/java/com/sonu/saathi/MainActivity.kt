@@ -271,7 +271,7 @@ fun ChatScreen(c: Character, store: Store, t: T, lang: String, config: Map<Strin
     var menu by remember { mutableStateOf(false) }
     val list = rememberLazyListState()
     val key = config["geminiKey"]?.toString().orEmpty()
-    val model = config["model"]?.toString()?.ifBlank { null } ?: "gemini-2.5-flash"
+    val model = config["model"]?.toString()?.ifBlank { null } ?: "gemini-3.5-flash"
 
     LaunchedEffect(c.id) {
         if (msgs.isEmpty() && c.greeting.isNotBlank()) {
