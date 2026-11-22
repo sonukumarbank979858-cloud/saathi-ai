@@ -97,7 +97,12 @@ fun CallScreen(
             if (status == TextToSpeech.SUCCESS) {
                 val r = ref?.setLanguage(locale) ?: TextToSpeech.LANG_NOT_SUPPORTED
                 if (r == TextToSpeech.LANG_MISSING_DATA || r == TextToSpeech.LANG_NOT_SUPPORTED) ref?.setLanguage(Locale("hi", "IN"))
-                ref?.setSpeechRate(1.0f); ref?.setPitch(1.05f)
+                ref?.setSpeechRate(0.95f); ref?.setPitch(if (Voice.isMale(c)) 0.85f else 1.1f)
+                try {
+                    val best = ref?.voices?.filter { it.locale.language == (ref?.voice?.locale?.language ?: "hi") }
+                        ?.maxByOrNull { it.quality }
+                    if (best != null) ref?.voice = best
+                } catch (_: Exception) {}
                 ttsReady = true
             }
         }
@@ -113,12 +118,34 @@ fun CallScreen(
         onDispose { tts.stop(); tts.shutdown() }
     }
 
+    var player by remember { mutableStateOf<android.media.MediaPlayer?>(null) }
+    var speakGen by remember { mutableIntStateOf(0) }
+    DisposableEffect(Unit) { onDispose { try { player?.release() } catch (_: Exception) {} } }
+
     fun speak(text: String) {
         caption = text
         state = CallState.Speaking
         val s = speakable(text)
         if (s.isEmpty()) { listenAgain.value(); return }
-        tts.speak(s, TextToSpeech.QUEUE_FLUSH, null, "u" + System.nanoTime())
+        val gen = ++speakGen
+        scope.launch {
+            val who = if (Voice.isMale(c)) "young Indian man" else "young Indian woman"
+            val style = "Read the following aloud exactly, as a real $who on a casual phone call, natural and expressive, with the emotion the words carry (${c.tagline}). Do not add anything:"
+            val f = Voice.synth(ctx, key, c, s, style)
+            if (ended || gen != speakGen) return@launch
+            if (f == null) { tts.speak(s, TextToSpeech.QUEUE_FLUSH, null, "u" + System.nanoTime()); return@launch }
+            try {
+                player?.release()
+                player = android.media.MediaPlayer().apply {
+                    setDataSource(f.absolutePath)
+                    setOnCompletionListener { mp -> mp.release(); if (player === mp) player = null; f.delete(); listenAgain.value() }
+                    setOnErrorListener { mp, _, _ -> mp.release(); if (player === mp) player = null; f.delete(); listenAgain.value(); true }
+                    prepare(); start()
+                }
+            } catch (e: Exception) {
+                f.delete(); tts.speak(s, TextToSpeech.QUEUE_FLUSH, null, "u" + System.nanoTime())
+            }
+        }
     }
 
     // ---- Speech recognition ----
@@ -132,7 +159,7 @@ fun CallScreen(
         val now = history + ChatMessage(true, userText, System.currentTimeMillis())
         history = now; store.saveMessages(c.id, now)
         scope.launch {
-            val sys = Gemini.systemPrompt(c, store.custom(c.id), lang, store.userName) +
+            val sys = Gemini.systemPrompt(c, store.custom(c.id), lang, store.userName, store.profileText()) +
                 "\n\nTHIS IS A LIVE VOICE CALL" + (if (video) " (video call)" else "") +
                 ": reply like natural spoken talk in 1 to 3 short sentences. No emojis, no lists, no stage directions, no asterisks."
             val reply = if (key.isBlank()) t.noKey else try {
@@ -202,6 +229,8 @@ fun CallScreen(
         ended = true
         try { recognizer?.cancel() } catch (_: Exception) {}
         tts.stop()
+        try { player?.release() } catch (_: Exception) {}
+        player = null
         onEnd()
     }
     androidx.activity.compose.BackHandler { end() }

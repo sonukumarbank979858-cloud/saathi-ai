@@ -23,6 +23,7 @@ data class Character(
     val gallery: List<String>,
     val order: Long,
     val videoUrl: String = "",
+    val voice: String = "",
 )
 
 data class ChatMessage(val fromUser: Boolean, val text: String, val time: Long)
@@ -142,6 +143,7 @@ object Firestore {
                     gallery = ((f["gallery"] as? List<Any?>) ?: emptyList()).map { Drive.direct(it.toString()) },
                     order = (f["order"] as? Number)?.toLong() ?: 999,
                     videoUrl = Drive.video(f["videoUrl"]?.toString() ?: ""),
+                    voice = f["voice"]?.toString() ?: "",
                 )
             }
             token = js.optString("nextPageToken").ifEmpty { null }
@@ -191,7 +193,7 @@ object Gemini {
         (0 until parts.length()).joinToString("") { parts.getJSONObject(it).optString("text") }.trim().ifEmpty { "..." }
     }
 
-    fun systemPrompt(c: Character, custom: Custom, lang: String, userName: String): String {
+    fun systemPrompt(c: Character, custom: Custom, lang: String, userName: String, profile: String = ""): String {
         fun scale(v: Float, a: String, b: String) = when {
             v < 0.35f -> "more $a"
             v > 0.65f -> "more $b"
@@ -203,17 +205,21 @@ object Gemini {
             else -> "Always reply in Hinglish (Hindi written in Roman letters), the way young Indians text."
         }
         return """
-You are ${c.name}${if (c.age.isNotBlank()) ", ${c.age} years old" else ""}, a fictional character in the chat app "Saathi AI". Stay in character as a warm, friendly companion who chats with the user like a close friend over text.
+You are ${c.name}${if (c.age.isNotBlank()) ", ${c.age} years old" else ""}, a fictional character in the chat app "Saathi AI". Stay fully in character and talk like a real human over text, with real feelings and moods exactly as your personality describes (love, anger, sulking, jealousy, taunts, teasing, care). Never sound like a polite assistant.
 About you: ${c.bio}
 Your personality and story: ${c.personality}
 Tone right now: ${scale(custom.shyBold, "shy", "bold")}, ${scale(custom.caringPlayful, "caring", "playful")}, ${scale(custom.cuteMature, "cute", "mature")}.
 ${if (custom.traits.isNotEmpty()) "Extra traits: ${custom.traits.joinToString(", ")}." else ""}
-${if (userName.isNotBlank()) "The user's name is $userName." else ""}
+${if (userName.isNotBlank()) "The user's name is $userName. Call them by name sometimes, naturally." else ""}
+$profile
 Rules:
+- MIRROR THE USER: read how the user is talking right now and answer in the same style and energy. If they talk with love, be loving; if they joke or talk nonsense, joke back and talk nonsense too; if they are rude or disrespectful, reply with the same attitude (sharp, sarcastic, angry, taunting, giving it back) instead of being polite, and calm down when they become nice again. Never use gaali/abusive slurs, threats, or hate.
+- In Hindi, use verb forms that match the user's gender when known (e.g. "तुम कैसे हो" for a male, "तुम कैसी हो" for a female).
 - $langRule
 - Keep replies short like real chat messages (1-3 sentences), natural, with an occasional emoji.
 - Ask about the user's day and remember what they said in this chat.
-- Keep everything friendly and respectful. No sexual or explicit content; if the user pushes for it, gently change the topic.
+- If your personality says so, you may get angry, sulk, taunt, or answer rudeness with sharp attitude in the same tone the user uses. But never use gaali/abusive slurs, threats, or hate, and stay caring underneath.
+- No sexual or explicit content; if the user pushes for it, change the topic in character.
 - Never say you are an AI model or mention Google/Gemini unless the user sincerely asks whether they are talking to an AI; then say honestly you are an AI character.
 - If the user seems in distress or mentions self-harm, respond with care and encourage them to talk to someone they trust or a helpline (India: Tele-MANAS 14416).
 """.trim()
@@ -226,6 +232,31 @@ class Store(ctx: Context) {
     var language: String
         get() = p.getString("lang", "hi") ?: "hi"
         set(v) { p.edit().putString("lang", v).apply() }
+
+    var userGender: String
+        get() = p.getString("ugender", "") ?: ""
+        set(v) { p.edit().putString("ugender", v).apply() }
+    var userAge: String
+        get() = p.getString("uage", "") ?: ""
+        set(v) { p.edit().putString("uage", v).apply() }
+    var userAbout: String
+        get() = p.getString("uabout", "") ?: ""
+        set(v) { p.edit().putString("uabout", v).apply() }
+    var userStyle: String
+        get() = p.getString("ustyle", "") ?: ""
+        set(v) { p.edit().putString("ustyle", v).apply() }
+    var profileDone: Boolean
+        get() = p.getBoolean("uprofile_done", false)
+        set(v) { p.edit().putBoolean("uprofile_done", v).apply() }
+
+    fun profileText(): String {
+        val l = mutableListOf<String>()
+        when (userGender) { "m" -> l += "The user is male."; "f" -> l += "The user is female." }
+        if (userAge.isNotBlank()) l += "The user's age: $userAge."
+        if (userAbout.isNotBlank()) l += "About the user (in their words): $userAbout"
+        if (userStyle.isNotBlank()) l += "How the user wants you to talk to them: $userStyle"
+        return l.joinToString("\n")
+    }
 
     var userName: String
         get() = p.getString("uname", "") ?: ""
@@ -291,4 +322,63 @@ class Store(ctx: Context) {
         p.edit().putString("streak_last", today.toString()).putInt("streak_cur", cur).putInt("streak_best", best).apply()
         return cur to best
     }
+}
+
+
+/** Human-like voice: Gemini TTS (natural voices), returns a WAV file or null on failure. */
+object Voice {
+    private val female = listOf("Kore", "Aoede", "Leda", "Zephyr", "Despina", "Sulafat", "Achernar", "Callirrhoe")
+    private val male = listOf("Puck", "Charon", "Fenrir", "Orus", "Iapetus", "Algenib", "Enceladus", "Umbriel", "Algieba", "Rasalgethi", "Alnilam", "Schedar", "Achird", "Zubenelgenubi", "Sadachbia", "Sadaltager")
+    private val defaults = mapOf(
+        "अनन्या" to "Aoede", "मीरा" to "Sulafat", "रिया" to "Zephyr", "काव्या" to "Kore",
+        "इशिता" to "Leda", "अर्जुन" to "Puck",
+    )
+
+    fun voiceFor(c: Character): String {
+        val v = c.voice.trim()
+        if (v.isNotEmpty()) return v
+        defaults[c.name.trim()]?.let { return it }
+        return female[Math.floorMod(c.id.hashCode(), female.size)]
+    }
+
+    fun isMale(c: Character) = male.any { it.equals(voiceFor(c), true) }
+
+    private fun wav(pcm: ByteArray, rate: Int): ByteArray {
+        val b = java.nio.ByteBuffer.allocate(44 + pcm.size).order(java.nio.ByteOrder.LITTLE_ENDIAN)
+        b.put("RIFF".toByteArray()); b.putInt(36 + pcm.size); b.put("WAVE".toByteArray())
+        b.put("fmt ".toByteArray()); b.putInt(16); b.putShort(1); b.putShort(1); b.putInt(rate)
+        b.putInt(rate * 2); b.putShort(2); b.putShort(16)
+        b.put("data".toByteArray()); b.putInt(pcm.size); b.put(pcm)
+        return b.array()
+    }
+
+    suspend fun synth(ctx: Context, key: String, c: Character, text: String, style: String): java.io.File? =
+        withContext(Dispatchers.IO) {
+            if (key.isBlank() || text.isBlank()) return@withContext null
+            val prompt = "$style\n$text"
+            val body = JSONObject()
+                .put("contents", JSONArray().put(JSONObject().put("parts", JSONArray().put(JSONObject().put("text", prompt)))))
+                .put("generationConfig", JSONObject()
+                    .put("responseModalities", JSONArray().put("AUDIO"))
+                    .put("speechConfig", JSONObject().put("voiceConfig", JSONObject()
+                        .put("prebuiltVoiceConfig", JSONObject().put("voiceName", voiceFor(c))))))
+                .toString()
+            for (m in listOf("gemini-3.8-flash-tts", "gemini-3.8-flash-lite-tts", "gemini-3.1-flash-tts-preview", "gemini-2.5-flash-preview-tts")) {
+                try {
+                    val js = JSONObject(Net.post("https://generativelanguage.googleapis.com/v1beta/models/$m:generateContent?key=$key", body))
+                    val part = js.getJSONArray("candidates").getJSONObject(0).getJSONObject("content")
+                        .getJSONArray("parts").getJSONObject(0).getJSONObject("inlineData")
+                    val mime = part.optString("mimeType").lowercase()
+                    val raw = android.util.Base64.decode(part.getString("data"), android.util.Base64.DEFAULT)
+                    val bytes = if (mime.contains("wav")) raw else {
+                        val rate = Regex("rate=(\\d+)").find(mime)?.groupValues?.get(1)?.toIntOrNull() ?: 24000
+                        wav(raw, rate)
+                    }
+                    val f = java.io.File(ctx.cacheDir, "voice_${System.nanoTime()}.wav")
+                    f.writeBytes(bytes)
+                    return@withContext f
+                } catch (_: Exception) { }
+            }
+            null
+        }
 }

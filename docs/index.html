@@ -71,6 +71,7 @@ small{color:var(--mut)}
       <label>वीडियो कॉल वीडियो — Google Drive लिंक (वैकल्पिक)</label>
       <input id="f_video" placeholder="https://drive.google.com/file/d/.../view?usp=sharing">
       <small>5–20 सेकंड का छोटा MP4 (50 MB से कम) जिसमें किरदार कैमरे की तरफ़ देखे। यह वीडियो कॉल में लूप में चलेगा। Share → "Anyone with the link"।</small>
+      <label>आवाज़ (इंसान जैसी AI आवाज़)</label><select id="f_voice"><option value="">अपने-आप (डिफ़ॉल्ट)</option><option value="Kore">Kore — महिला, साफ़ और भरोसेमंद</option><option value="Aoede">Aoede — महिला, हल्की-फुल्की</option><option value="Leda">Leda — महिला, युवा, कोमल</option><option value="Zephyr">Zephyr — महिला, चुलबुली</option><option value="Despina">Despina — महिला, मीठी</option><option value="Sulafat">Sulafat — महिला, गर्मजोशी</option><option value="Achernar">Achernar — महिला, नरम</option><option value="Callirrhoe">Callirrhoe — महिला, सहज</option><option value="Puck">Puck — पुरुष, जोशीला</option><option value="Charon">Charon — पुरुष, गहरा</option><option value="Fenrir">Fenrir — पुरुष, उत्साही</option><option value="Orus">Orus — पुरुष, मज़बूत</option><option value="Iapetus">Iapetus — पुरुष, साफ़</option><option value="Algenib">Algenib — पुरुष, भारी</option><option value="Pulcherrima">Pulcherrima — महिला, तेज़-तर्रार</option><option value="Autonoe">Autonoe — महिला, चमकदार</option><option value="Laomedeia">Laomedeia — महिला, जोशीली</option><option value="Gacrux">Gacrux — महिला, परिपक्व</option><option value="Vindemiatrix">Vindemiatrix — महिला, कोमल</option><option value="Alnilam">Alnilam — पुरुष, सख़्त</option><option value="Algieba">Algieba — पुरुष, मुलायम</option></select>
       <label><input id="f_active" type="checkbox" checked style="width:auto"> ऐप में दिखाएँ</label>
       <button id="saveChar">सेव करें</button>
       <button id="newChar" class="sec">नया फ़ॉर्म</button>
@@ -85,9 +86,9 @@ small{color:var(--mut)}
 
     <div class="card">
       <h2>एक साथ बहुत सारे जोड़ें (JSON)</h2>
-      <small>JSON array: [{"name":"...","age":22,"category":"...","tagline":"...","bio":"...","personality":"...","greeting":"...","imageUrl":"drive link","gallery":["drive link"],"videoUrl":"drive link (optional)"}]</small>
+      <small>JSON array: [{"name":"...","age":22,"category":"...","tagline":"...","bio":"...","personality":"...","greeting":"...","imageUrl":"drive link","gallery":["drive link"],"videoUrl":"drive link (optional)","voice":"Kore (optional)"}]</small>
       <textarea id="bulk" style="min-height:140px"></textarea>
-      <button id="bulkBtn">सब जोड़ें</button> <button id="seedBtn">6 स्टार्टर किरदार लोड करें</button><div id="bulkMsg" class="msg"></div>
+      <button id="bulkBtn">सब जोड़ें</button> <button id="seedBtn">6 स्टार्टर किरदार लोड करें</button> <button id="seed2Btn">7 नए स्वभाव वाले किरदार लोड करें</button><div id="bulkMsg" class="msg"></div>
     </div>
   </section>
 </main>
@@ -145,7 +146,7 @@ $("saveCfg").onclick=async()=>{
 
 let editing=null;
 const fields=["name","age","category","order","tagline","bio","personality","greeting","image","gallery"];
-function clearForm(){editing=null;fields.forEach(f=>$("f_"+f).value="");$("f_order").value=100;$("f_active").checked=true;$("f_prev").src="";$("f_video").value="";
+function clearForm(){editing=null;fields.forEach(f=>$("f_"+f).value="");$("f_order").value=100;$("f_active").checked=true;$("f_prev").src="";$("f_video").value="";$("f_voice").value="";
   $("formTitle").textContent="नया किरदार जोड़ें";$("delChar").classList.add("hide");$("charMsg").textContent="";}
 $("newChar").onclick=clearForm;
 
@@ -153,7 +154,7 @@ function formData(){
   return {name:$("f_name").value.trim(),age:Number($("f_age").value)||null,category:$("f_category").value.trim(),
     order:Number($("f_order").value)||100,tagline:$("f_tagline").value.trim(),bio:$("f_bio").value.trim(),
     personality:$("f_personality").value.trim(),greeting:$("f_greeting").value.trim(),imageUrl:$("f_image").value.trim(),
-    gallery:$("f_gallery").value.split("\n").map(s=>s.trim()).filter(Boolean),active:$("f_active").checked,videoUrl:$("f_video").value.trim()};
+    gallery:$("f_gallery").value.split("\n").map(s=>s.trim()).filter(Boolean),active:$("f_active").checked,videoUrl:$("f_video").value.trim(),voice:$("f_voice").value};
 }
 function clean(d){ if(d.age!=null && d.age<18) throw new Error("उम्र 18 या उससे ज़्यादा होनी चाहिए"); if(d.age==null) delete d.age; return d; }
 
@@ -180,7 +181,7 @@ async function loadList(){
     el.querySelector("b").textContent=c.name+(c.age?", "+c.age:""); el.querySelector("small").textContent=(c.active===false?"(छुपा) ":"")+(c.category||"");
     el.onclick=()=>{editing=c.id;$("f_name").value=c.name||"";$("f_age").value=c.age||"";$("f_category").value=c.category||"";
       $("f_order").value=c.order||100;$("f_tagline").value=c.tagline||"";$("f_bio").value=c.bio||"";$("f_personality").value=c.personality||"";
-      $("f_greeting").value=c.greeting||"";$("f_image").value=c.imageUrl||"";$("f_gallery").value=(c.gallery||[]).join("\n");$("f_video").value=c.videoUrl||"";
+      $("f_greeting").value=c.greeting||"";$("f_image").value=c.imageUrl||"";$("f_gallery").value=(c.gallery||[]).join("\n");$("f_video").value=c.videoUrl||"";$("f_voice").value=c.voice||"";
       $("f_active").checked=c.active!==false;$("f_prev").src=drive(c.imageUrl);$("formTitle").textContent="बदलें: "+c.name;
       $("delChar").classList.remove("hide");window.scrollTo({top:$("formTitle").offsetTop-20,behavior:"smooth"});};
     $("list").appendChild(el);
@@ -188,6 +189,7 @@ async function loadList(){
 }
 
 $("seedBtn").onclick=async()=>{$("bulk").value=await (await fetch("seeds.json?"+Date.now())).text();};
+$("seed2Btn").onclick=async()=>{$("bulk").value=await (await fetch("seeds2.json?"+Date.now())).text();};
 $("bulkBtn").onclick=async()=>{
   try{
     const arr=JSON.parse($("bulk").value); let n=0;

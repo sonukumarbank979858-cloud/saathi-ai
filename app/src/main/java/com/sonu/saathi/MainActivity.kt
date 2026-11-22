@@ -7,6 +7,8 @@ import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
@@ -119,6 +121,9 @@ fun App() {
             else -> openChat = null
         }
     }
+
+    var askProfile by remember { mutableStateOf(!store.profileDone) }
+    if (askProfile) ProfileDialog(store) { askProfile = false }
 
     when {
         openCall != null -> CallScreen(openCall!!.first, store, t, lang, config, openCall!!.second) { openCall = null }
@@ -290,7 +295,7 @@ fun ChatScreen(c: Character, store: Store, t: T, lang: String, config: Map<Strin
         msgs = now; store.saveMessages(c.id, now); busy = true
         scope.launch {
             val reply = if (key.isBlank()) t.noKey else try {
-                Gemini.reply(key, model, Gemini.systemPrompt(c, store.custom(c.id), lang, store.userName), now)
+                Gemini.reply(key, model, Gemini.systemPrompt(c, store.custom(c.id), lang, store.userName, store.profileText()), now)
             } catch (e: Exception) { "⚠️ " + (e.message ?: "Error") }
             val after = msgs + ChatMessage(false, reply, System.currentTimeMillis())
             msgs = after; store.saveMessages(c.id, after); busy = false
@@ -420,6 +425,8 @@ fun SettingsScreen(store: Store, t: T, streak: Pair<Int, Int>, lang: String, set
     var name by remember { mutableStateOf(store.userName) }
     var langDialog by remember { mutableStateOf(false) }
     var confirmClear by remember { mutableStateOf(false) }
+    var profileDialog by remember { mutableStateOf(false) }
+    if (profileDialog) ProfileDialog(store) { profileDialog = false; name = store.userName }
     val langName = mapOf("hi" to "हिंदी (देवनागरी)", "hinglish" to "Hinglish", "en" to "English")
     LazyColumn(contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         item { Text(t.settings, fontSize = 30.sp, fontWeight = FontWeight.Bold, color = Color.White) }
@@ -429,6 +436,7 @@ fun SettingsScreen(store: Store, t: T, streak: Pair<Int, Int>, lang: String, set
             OutlinedTextField(value = name, onValueChange = { name = it; store.userName = it }, label = { Text(t.yourName) },
                 modifier = Modifier.fillMaxWidth(), singleLine = true)
         }
+        item { SettingRow(Icons.Filled.Person, "मेरी जानकारी", "नाम, उम्र, बात करने का तरीका") { profileDialog = true } }
         item { SettingRow(Icons.Filled.Refresh, t.retry) { reload() } }
         item { SettingRow(Icons.Filled.DeleteSweep, t.clearAll) { confirmClear = true } }
         item { Text("साथी AI v${BuildConfig.VERSION_NAME}", color = Color.Gray, modifier = Modifier.padding(8.dp)) }
@@ -450,4 +458,47 @@ fun SettingsScreen(store: Store, t: T, streak: Pair<Int, Int>, lang: String, set
         confirmButton = { TextButton(onClick = { store.clearAll(); confirmClear = false }) { Text("OK") } },
         dismissButton = { TextButton(onClick = { confirmClear = false }) { Text("✕") } },
         title = { Text(t.clearAll) })
+}
+
+
+val STYLES = listOf("प्यार से", "दोस्त की तरह", "मज़ाक-मस्ती में", "सीधी-सीधी बात", "जैसा मैं बोलूँ वैसा ही")
+
+@Composable
+fun ProfileDialog(store: Store, onDone: () -> Unit) {
+    var name by remember { mutableStateOf(store.userName) }
+    var gender by remember { mutableStateOf(store.userGender) }
+    var age by remember { mutableStateOf(store.userAge) }
+    var about by remember { mutableStateOf(store.userAbout) }
+    var style by remember { mutableStateOf(store.userStyle) }
+    AlertDialog(
+        onDismissRequest = {},
+        title = { Text("अपने बारे में बताइए") },
+        text = {
+            Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("इससे किरदार आपको नाम से बुलाएँगे और आपके हिसाब से बात करेंगे। यह सिर्फ़ आपके फ़ोन में रहता है।", color = Color.Gray, fontSize = 13.sp)
+                OutlinedTextField(value = name, onValueChange = { name = it }, label = { Text("आपका नाम") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    RadioButton(selected = gender == "m", onClick = { gender = "m" }); Text("पुरुष")
+                    Spacer(Modifier.width(12.dp))
+                    RadioButton(selected = gender == "f", onClick = { gender = "f" }); Text("महिला")
+                }
+                OutlinedTextField(value = age, onValueChange = { age = it.filter { ch -> ch.isDigit() }.take(2) }, label = { Text("उम्र (वैकल्पिक)") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                OutlinedTextField(value = about, onValueChange = { about = it.take(300) }, label = { Text("अपने बारे में: शौक, काम, पसंद (वैकल्पिक)") }, modifier = Modifier.fillMaxWidth())
+                Text("आपसे कैसे बात करें?")
+                STYLES.forEach { s ->
+                    Row(Modifier.fillMaxWidth().clickable { style = s }, verticalAlignment = Alignment.CenterVertically) {
+                        RadioButton(selected = style == s, onClick = { style = s }); Text(s)
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = {
+                store.userName = name.trim(); store.userGender = gender; store.userAge = age
+                store.userAbout = about.trim(); store.userStyle = style; store.profileDone = true
+                onDone()
+            }) { Text("सेव करें") }
+        },
+        dismissButton = { TextButton(onClick = { store.profileDone = true; onDone() }) { Text("बाद में") } },
+    )
 }
