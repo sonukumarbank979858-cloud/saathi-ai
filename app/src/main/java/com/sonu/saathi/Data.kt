@@ -179,12 +179,24 @@ object Gemini {
         var raw: String? = null
         var lastErr: Exception? = null
         for (m in models) {
-            if (m.contains("2.5")) gen.put("thinkingConfig", JSONObject().put("thinkingBudget", 0)) else gen.remove("thinkingConfig")
+            when {
+                m.contains("2.5") -> gen.put("thinkingConfig", JSONObject().put("thinkingBudget", 0))
+                m.startsWith("gemini-3") -> gen.put("thinkingConfig", JSONObject().put("thinkingLevel", "minimal"))
+                else -> gen.remove("thinkingConfig")
+            }
             body.put("generationConfig", gen)
             try {
                 raw = Net.post("https://generativelanguage.googleapis.com/v1beta/models/$m:generateContent?key=$key", body.toString())
                 break
-            } catch (e: Exception) { lastErr = e }
+            } catch (e: Exception) {
+                lastErr = e
+                // Retry once without thinking settings in case the model rejects them.
+                gen.remove("thinkingConfig"); body.put("generationConfig", gen)
+                try {
+                    raw = Net.post("https://generativelanguage.googleapis.com/v1beta/models/$m:generateContent?key=$key", body.toString())
+                    break
+                } catch (e2: Exception) { lastErr = e2 }
+            }
         }
         val js = JSONObject(raw ?: throw (lastErr ?: Exception("Gemini error")))
         val cands = js.optJSONArray("candidates")
