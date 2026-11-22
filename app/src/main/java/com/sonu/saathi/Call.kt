@@ -30,6 +30,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
@@ -119,6 +120,8 @@ fun CallScreen(
     }
 
     var player by remember { mutableStateOf<android.media.MediaPlayer?>(null) }
+    var level by remember { mutableFloatStateOf(0f) }
+    var sysTts by remember { mutableStateOf(false) }
     var speakGen by remember { mutableIntStateOf(0) }
     DisposableEffect(Unit) { onDispose { try { player?.release() } catch (_: Exception) {} } }
 
@@ -127,13 +130,14 @@ fun CallScreen(
         state = CallState.Speaking
         val s = speakable(text)
         if (s.isEmpty()) { listenAgain.value(); return }
+        sysTts = false
         val gen = ++speakGen
         scope.launch {
             val who = if (Voice.isMale(c)) "young Indian man" else "young Indian woman"
             val style = "Read the following aloud exactly, as a real $who on a casual phone call, natural and expressive, with the emotion the words carry (${c.tagline}). Do not add anything:"
             val f = Voice.synth(ctx, key, c, s, style)
             if (ended || gen != speakGen) return@launch
-            if (f == null) { tts.speak(s, TextToSpeech.QUEUE_FLUSH, null, "u" + System.nanoTime()); return@launch }
+            if (f == null) { sysTts = true; tts.speak(s, TextToSpeech.QUEUE_FLUSH, null, "u" + System.nanoTime()); return@launch }
             try {
                 player?.release()
                 player = android.media.MediaPlayer().apply {
@@ -142,8 +146,18 @@ fun CallScreen(
                     setOnErrorListener { mp, _, _ -> mp.release(); if (player === mp) player = null; f.delete(); listenAgain.value(); true }
                     prepare(); start()
                 }
+                val env = Voice.envelope(f)
+                val mp = player
+                scope.launch {
+                    while (!ended && mp != null && player === mp) {
+                        val pos = try { if (mp.isPlaying) mp.currentPosition else -1 } catch (_: Exception) { -1 }
+                        level = if (pos >= 0 && env.isNotEmpty()) env[(pos / 40).coerceIn(0, env.size - 1)] else 0f
+                        delay(40)
+                    }
+                    level = 0f
+                }
             } catch (e: Exception) {
-                f.delete(); tts.speak(s, TextToSpeech.QUEUE_FLUSH, null, "u" + System.nanoTime())
+                f.delete(); sysTts = true; tts.speak(s, TextToSpeech.QUEUE_FLUSH, null, "u" + System.nanoTime())
             }
         }
     }
@@ -240,11 +254,19 @@ fun CallScreen(
     val ring by pulse.animateFloat(1f, 1.18f, infiniteRepeatable(tween(700), RepeatMode.Reverse), label = "r")
     val drift by pulse.animateFloat(1.0f, 1.08f, infiniteRepeatable(tween(6000, easing = LinearEasing), RepeatMode.Reverse), label = "d")
     val talking = state == CallState.Speaking
+    // Fallback wobble when the phone's own TTS is speaking (no audio data available).
+    val wobble by pulse.animateFloat(0f, 1f, infiniteRepeatable(tween(180), RepeatMode.Reverse), label = "w")
+    val rawLvl = if (talking) (if (sysTts) wobble * 0.6f else level) else 0f
+    val lvl by animateFloatAsState(rawLvl, tween(60), label = "lvl")
+    val sway by pulse.animateFloat(-1f, 1f, infiniteRepeatable(tween(2600), RepeatMode.Reverse), label = "s")
 
     Box(Modifier.fillMaxSize().background(Color.Black)) {
         if (video) {
             if (c.videoUrl.isNotBlank()) LoopVideo(c.videoUrl, Modifier.fillMaxSize())
-            else AsyncImage(c.imageUrl, null, Modifier.fillMaxSize().scale(if (talking) drift * 1.02f else drift), contentScale = ContentScale.Crop)
+            else AsyncImage(c.imageUrl, null, Modifier.fillMaxSize().graphicsLayer {
+                    scaleX = drift + lvl * 0.03f; scaleY = drift + lvl * 0.05f
+                    translationY = -lvl * 14f; rotationZ = sway * (0.6f + lvl * 1.2f)
+                }, contentScale = ContentScale.Crop)
             Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Color(0x88000000), Color.Transparent, Color(0xDD000000)))))
         } else {
             AsyncImage(c.imageUrl, null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop, alpha = 0.35f)
@@ -256,9 +278,9 @@ fun CallScreen(
             Spacer(Modifier.height(24.dp))
             if (!video) {
                 Box(contentAlignment = Alignment.Center) {
-                    Box(Modifier.size(170.dp).scale(if (talking) ring else 1f).clip(CircleShape)
+                    Box(Modifier.size(170.dp).scale(if (talking) 1f + lvl * 0.2f else 1f).clip(CircleShape)
                         .border(3.dp, Brush.linearGradient(listOf(Color(0xFFFF4D8D), Color(0xFF9B5CFF))), CircleShape))
-                    AsyncImage(c.imageUrl, null, Modifier.size(150.dp).clip(CircleShape), contentScale = ContentScale.Crop)
+                    AsyncImage(c.imageUrl, null, Modifier.size(150.dp).scale(1f + lvl * 0.05f).clip(CircleShape), contentScale = ContentScale.Crop)
                 }
                 Spacer(Modifier.height(16.dp))
             }

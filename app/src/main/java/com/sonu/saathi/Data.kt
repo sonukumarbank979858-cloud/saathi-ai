@@ -258,6 +258,12 @@ class Store(ctx: Context) {
     var userStyle: String
         get() = p.getString("ustyle", "") ?: ""
         set(v) { p.edit().putString("ustyle", v).apply() }
+    var notifyOn: Boolean
+        get() = p.getBoolean("notify_on", true)
+        set(v) { p.edit().putBoolean("notify_on", v).apply() }
+    var lastNudge: Long
+        get() = p.getLong("last_nudge", 0L)
+        set(v) { p.edit().putLong("last_nudge", v).apply() }
     var profileDone: Boolean
         get() = p.getBoolean("uprofile_done", false)
         set(v) { p.edit().putBoolean("uprofile_done", v).apply() }
@@ -353,6 +359,27 @@ object Voice {
         defaults[c.name.trim()]?.let { return it }
         return female[Math.floorMod(c.id.hashCode(), female.size)]
     }
+
+    /** Loudness per 40 ms frame (0..1) from a 16-bit mono WAV, for lip/photo animation. */
+    fun envelope(f: java.io.File): FloatArray = try {
+        val b = f.readBytes()
+        val bb = java.nio.ByteBuffer.wrap(b).order(java.nio.ByteOrder.LITTLE_ENDIAN)
+        val rate = bb.getInt(24).takeIf { it in 8000..96000 } ?: 24000
+        var dataStart = 12
+        while (dataStart + 8 < b.size && String(b, dataStart, 4) != "data") dataStart += 8 + bb.getInt(dataStart + 4)
+        dataStart += 8
+        val frame = rate * 40 / 1000
+        val n = ((b.size - dataStart) / 2) / frame
+        val out = FloatArray(maxOf(n, 0))
+        var peak = 1f
+        for (i in 0 until n) {
+            var sum = 0.0
+            for (j in 0 until frame) { val v = bb.getShort(dataStart + (i * frame + j) * 2).toDouble(); sum += v * v }
+            out[i] = Math.sqrt(sum / frame).toFloat(); if (out[i] > peak) peak = out[i]
+        }
+        for (i in out.indices) out[i] = (out[i] / peak).coerceIn(0f, 1f)
+        out
+    } catch (_: Exception) { FloatArray(0) }
 
     fun isMale(c: Character) = male.any { it.equals(voiceFor(c), true) }
 

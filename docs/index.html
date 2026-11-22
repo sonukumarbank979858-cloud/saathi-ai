@@ -45,6 +45,11 @@ small{color:var(--mut)}
         <option value="gemini-3.1-flash-lite">gemini-3.1-flash-lite (तेज़, ज़्यादा मुफ़्त सीमा)</option>
         <option value="gemini-2.0-flash">gemini-2.0-flash</option>
       </select>
+      <label><input id="notifyEnabled" type="checkbox" checked style="width:auto"> ऐप बंद होने पर भी किरदार संदेश/नोटिफ़िकेशन भेजें</label>
+      <label>कितने घंटे में एक संदेश (1–48)</label><input id="notifyHours" type="number" min="1" max="48" value="4">
+      <small>रात 10 से सुबह 8 बजे तक कोई नोटिफ़िकेशन नहीं जाएगा।</small>
+      <label>अपडेट संदेश (नया APK आने पर ऐप में दिखेगा, वैकल्पिक)</label><input id="updateNote" placeholder="जैसे: नए किरदार और बेहतर आवाज़!">
+      <small>नया APK GitHub से बनते ही ऐप खुद अपडेट दिखाएगा और ऐप के अंदर ही डाउनलोड-इंस्टॉल होगा।</small>
       <button id="saveCfg">सेटिंग्स सेव करें</button><div id="cfgMsg" class="msg"></div>
     </div>
 
@@ -137,10 +142,10 @@ onAuthStateChanged(auth,u=>{
 
 async function loadCfg(){
   const s=await getDoc(doc(db,"config","app"));
-  if(s.exists()){const d=s.data(); $("geminiKey").value=d.geminiKey||""; if(d.model) $("model").value=d.model;}
+  if(s.exists()){const d=s.data(); $("geminiKey").value=d.geminiKey||""; if(d.model) $("model").value=d.model; $("notifyEnabled").checked=d.notifyEnabled!==false; $("notifyHours").value=d.notifyHours||4; $("updateNote").value=d.updateNote||"";}
 }
 $("saveCfg").onclick=async()=>{
-  const cfg={model:$("model").value}; const k=$("geminiKey").value.trim(); if(k) cfg.geminiKey=k; await setDoc(doc(db,"config","app"),cfg,{merge:true});
+  const cfg={model:$("model").value,notifyEnabled:$("notifyEnabled").checked,notifyHours:Math.min(48,Math.max(1,parseInt($("notifyHours").value)||4)),updateNote:$("updateNote").value.trim()}; const k=$("geminiKey").value.trim(); if(k) cfg.geminiKey=k; await setDoc(doc(db,"config","app"),cfg,{merge:true});
   $("cfgMsg").textContent="सेव हो गया ✔";
 };
 

@@ -3,6 +3,8 @@ package com.sonu.saathi
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -46,9 +48,18 @@ val Pink = Color(0xFFD946EF)
 val Violet = Color(0xFF8B5CF6)
 val Grad = Brush.horizontalGradient(listOf(Pink, Violet))
 
+object Launch { val chatId = androidx.compose.runtime.mutableStateOf<String?>(null) }
+
 class MainActivity : ComponentActivity() {
+    override fun onNewIntent(intent: android.content.Intent) {
+        super.onNewIntent(intent)
+        intent.getStringExtra("charId")?.let { Launch.chatId.value = it }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        intent?.getStringExtra("charId")?.let { Launch.chatId.value = it }
+        Notify.schedule(this)
         enableEdgeToEdge()
         setContent {
             MaterialTheme(colorScheme = darkColorScheme(primary = Pink, secondary = Violet, background = Bg, surface = Card)) {
@@ -125,6 +136,54 @@ fun App() {
     var askProfile by remember { mutableStateOf(!store.profileDone) }
     if (askProfile) ProfileDialog(store) { askProfile = false }
 
+    // Notification permission (Android 13+), asked once after the profile.
+    val notifLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { }
+    LaunchedEffect(askProfile) {
+        if (!askProfile && android.os.Build.VERSION.SDK_INT >= 33 &&
+            androidx.core.content.ContextCompat.checkSelfPermission(ctx, android.Manifest.permission.POST_NOTIFICATIONS) != android.content.pm.PackageManager.PERMISSION_GRANTED)
+            notifLauncher.launch(android.Manifest.permission.POST_NOTIFICATIONS)
+    }
+
+    // Open the chat a notification was tapped for.
+    val launchId by Launch.chatId
+    LaunchedEffect(launchId, chars) {
+        val id = launchId ?: return@LaunchedEffect
+        chars?.firstOrNull { it.id == id }?.let { openChat = it; Launch.chatId.value = null }
+    }
+
+    // In-app update.
+    var newBuild by remember { mutableStateOf<Int?>(null) }
+    var dl by remember { mutableStateOf<Float?>(null) }
+    var dlFile by remember { mutableStateOf<java.io.File?>(null) }
+    val scope = rememberCoroutineScope()
+    LaunchedEffect(Unit) { newBuild = Updater.check() }
+    if (newBuild != null) AlertDialog(
+        onDismissRequest = { if (dl == null) newBuild = null },
+        title = { Text("नया अपडेट आया है 🎉") },
+        text = {
+            Column {
+                Text("साथी AI का नया वर्ज़न (बिल्ड ${newBuild}) तैयार है। ${config["updateNote"]?.toString().orEmpty()}")
+                dl?.let { Spacer(Modifier.height(10.dp)); LinearProgressIndicator(progress = { it }, modifier = Modifier.fillMaxWidth()) }
+            }
+        },
+        confirmButton = {
+            TextButton(enabled = dl == null || dlFile != null, onClick = {
+                val f = dlFile
+                if (f != null) {
+                    if (Updater.canInstall(ctx)) Updater.install(ctx, f) else Updater.openInstallPermission(ctx)
+                } else {
+                    dl = 0f
+                    scope.launch {
+                        try { dlFile = Updater.download(ctx) { p -> dl = p }; dl = 1f
+                            if (Updater.canInstall(ctx)) Updater.install(ctx, dlFile!!) else Updater.openInstallPermission(ctx)
+                        } catch (e: Exception) { dl = null; Updater.openInBrowser(ctx) }
+                    }
+                }
+            }) { Text(if (dlFile != null) "इंस्टॉल करें" else if (dl != null) "डाउनलोड हो रहा है…" else "अभी अपडेट करें") }
+        },
+        dismissButton = { if (dl == null) TextButton(onClick = { newBuild = null }) { Text("बाद में") } },
+    )
+
     when {
         openCall != null -> CallScreen(openCall!!.first, store, t, lang, config, openCall!!.second) { openCall = null }
         viewImage != null -> ImageViewer(viewImage!!) { viewImage = null }
@@ -161,7 +220,13 @@ fun App() {
                         0 -> HomeScreen(chars!!, t) { openChat = it }
                         1 -> GalleryScreen(chars!!, t) { viewImage = it }
                         2 -> MessagesScreen(chars!!, store, t) { openChat = it }
-                        else -> SettingsScreen(store, t, streak, lang, { lang = it; store.language = it }) { reload++ }
+                        else -> SettingsScreen(store, t, streak, lang, { lang = it; store.language = it }, checkUpdate = {
+                            scope.launch {
+                                val n = Updater.check()
+                                if (n == null) android.widget.Toast.makeText(ctx, "आप सबसे नए वर्ज़न पर हैं ✔", android.widget.Toast.LENGTH_SHORT).show()
+                                newBuild = n
+                            }
+                        }) { reload++ }
                     }
                 }
             }
@@ -421,7 +486,7 @@ fun SettingRow(icon: ImageVector, title: String, sub: String? = null, onClick: (
 }
 
 @Composable
-fun SettingsScreen(store: Store, t: T, streak: Pair<Int, Int>, lang: String, setLang: (String) -> Unit, reload: () -> Unit) {
+fun SettingsScreen(store: Store, t: T, streak: Pair<Int, Int>, lang: String, setLang: (String) -> Unit, checkUpdate: () -> Unit = {}, reload: () -> Unit) {
     var name by remember { mutableStateOf(store.userName) }
     var langDialog by remember { mutableStateOf(false) }
     var confirmClear by remember { mutableStateOf(false) }
@@ -437,6 +502,13 @@ fun SettingsScreen(store: Store, t: T, streak: Pair<Int, Int>, lang: String, set
                 modifier = Modifier.fillMaxWidth(), singleLine = true)
         }
         item { SettingRow(Icons.Filled.Person, "मेरी जानकारी", "नाम, उम्र, बात करने का तरीका") { profileDialog = true } }
+        item {
+            var on by remember { mutableStateOf(store.notifyOn) }
+            SettingRow(Icons.Filled.Notifications, "किरदारों के नोटिफ़िकेशन", if (on) "चालू (ऐप बंद होने पर भी संदेश)" else "बंद") {
+                on = !on; store.notifyOn = on
+            }
+        }
+        item { SettingRow(Icons.Filled.SystemUpdate, "अपडेट देखें", "वर्ज़न ${BuildConfig.VERSION_NAME}") { checkUpdate() } }
         item { SettingRow(Icons.Filled.Refresh, t.retry) { reload() } }
         item { SettingRow(Icons.Filled.DeleteSweep, t.clearAll) { confirmClear = true } }
         item { Text("साथी AI v${BuildConfig.VERSION_NAME}", color = Color.Gray, modifier = Modifier.padding(8.dp)) }
